@@ -171,16 +171,15 @@ func (r *QueryResult) Next() ([][]string, error) {
 
 func (r *QueryResult) asRows() [][]string {
 	data := r.buffer.Bytes()
-	r.buffer.Reset()
-
 	rows := bytes.Split(data, []byte("\n"))
-	lastRowIndex := len(rows) - 1
 
+	var partialRow []byte
+	lastRowIndex := len(rows) - 1
 	// The last row isn't a complete row. We have to ignore it in this call to
 	// asRows, but we append it to our buffer for it to be merged with data from
 	// the next ReadFrame (on the next call to our Next() function above)
 	if !bytes.HasSuffix(rows[lastRowIndex], []byte("\t]")) {
-		r.buffer.Write(rows[lastRowIndex])
+		partialRow = rows[lastRowIndex]
 		rows = rows[0:lastRowIndex]
 	}
 
@@ -189,5 +188,11 @@ func (r *QueryResult) asRows() [][]string {
 		// 2 : len()-2   to strip out the leading and trailing '[\t' and '\t]'
 		table[i] = strings.Split(string(row[2:len(row)-2]), ",\t")
 	}
+
+	r.buffer.Reset()
+	if partialRow != nil {
+		r.buffer.Write(partialRow)
+	}
+
 	return table
 }

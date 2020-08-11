@@ -43,6 +43,8 @@ func main() {
 		Quiet    bool   `opts:"help=quiet logging, short=q`
 		Schema   string `opts:"help=schema to use when connecting, short=s`
 		Role     string `opts:"help=role to use when connecting, short=r`
+		Command  string `opts:"help=executes the command and exists, short=c`
+		Format   string `opts:help=default outputformat (sql, raw, expanded), short=f`
 	}
 
 	args := flags{
@@ -54,6 +56,8 @@ func main() {
 		Quiet:    false,
 		Schema:   "",
 		Role:     "",
+		Command:  "",
+		Format:   "sql",
 	}
 	opts.Parse(&args)
 
@@ -89,6 +93,24 @@ func main() {
 
 	context := NewContext(conn, os.Stdout)
 	defer context.Close()
+
+	format := strings.ToLower(args.Format)
+	if format == "raw" {
+		context.FormatRaw()
+	} else if format == "expanded" {
+		context.FormatExpanded()
+	}
+
+	if cmd := args.Command; cmd != "" {
+		cmd = strings.TrimSpace(cmd)
+		if !strings.HasSuffix(cmd, ";") {
+			cmd = cmd + ";"
+		}
+		if err := query(context, cmd); err != nil {
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
 
 	prompt, err := libedit.InitFiles("msql", true, os.Stdin, os.Stdout, os.Stderr)
 	if err != nil {
@@ -174,10 +196,10 @@ func statement(prompt libedit.EditLine, context *Context, line string) {
 
 // The statement function has collected a full statement, send it to the server
 // and deal with the response
-func query(context *Context, statement string) {
+func query(context *Context, statement string) error {
 	if err := context.conn.Send("s", statement); err != nil {
 		handleDriverError(err) // can exit
-		return
+		return err
 	}
 
 	var err error
@@ -192,6 +214,7 @@ func query(context *Context, statement string) {
 	if err != nil {
 		handleDriverError(err)
 	}
+	return err
 }
 
 // Tracks the state of our statement parsing

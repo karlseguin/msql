@@ -63,7 +63,13 @@ func renderSQLPage(result driver.Result, showHeaders bool, out io.Writer) (bool,
 		return false, nil
 	}
 
-	// TODO: Pad the first row using result.Lengths()
+	first := data[0]
+	lengths := result.Lengths()
+	for i, d := range first {
+		// not exactly sure why +2, maybe the borders..what is this, html?
+		first[i] = tablewriter.PadRight(d, " ", lengths[i]+2)
+	}
+	data[0] = first
 
 	table := tablewriter.NewWriter(out)
 	table.SetAutoFormatHeaders(false)

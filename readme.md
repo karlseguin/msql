@@ -13,11 +13,9 @@ An alternative to mclient. Featuring:
 TODO:
 1. Multiline-pasting
 2. Accept input from stdin
-3. Add -c flag
-4. Add -f flag
-5. Add CSV output
-6. Custom prompt
-7. Add timing information
-8. Add exit-on-error flag
-9. Fix multi-frame table alignment
-10. Add expanded mode
+3. Add -f flag
+4. Add CSV output
+5. Custom prompt
+6. Add timing information
+7. Add exit-on-error flag
+8. Add expanded mode

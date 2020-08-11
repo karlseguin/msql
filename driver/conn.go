@@ -49,6 +49,11 @@ func Open(config Config) (Conn, error) {
 		return Conn{}, err
 	}
 
+	if err := c.disableReplySize(); err != nil {
+		socket.Close()
+		return Conn{}, err
+	}
+
 	c.SetDeadline(time.Time{})
 	return c, nil
 }
@@ -148,6 +153,16 @@ func (c Conn) set(field string, value string) error {
 	}
 	if !bytes.HasPrefix(data, []byte("&3 ")) {
 		return detailedDriverError("invalid response to SET command", string(data))
+	}
+	return nil
+}
+
+func (c Conn) disableReplySize() error {
+	if err := c.Send("Xreply_size -1\n"); err != nil {
+		return err
+	}
+	if _, err := c.readMessage(); err != nil {
+		return err
 	}
 	return nil
 }
