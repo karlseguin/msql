@@ -8,7 +8,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/jpillora/opts"
+	"github.com/jessevdk/go-flags"
 	"github.com/karlseguin/msql/commands"
 	"github.com/karlseguin/msql/driver"
 	"github.com/karlseguin/msql/outputs"
@@ -34,37 +34,29 @@ func init() {
 }
 
 func main() {
-	type flags struct {
-		Port     uint32 `opts:"help=port to connect to,short=p"`
-		Host     string `opts:"help=host to connect to,short=h"`
-		Database string `opts:"help=database to connect to,short=d"`
-		UserName string `opts:"name=username,help=username to connect as,short=u"`
-		Verbose  bool   `opts:"help=verbose logging, short=b`
-		Quiet    bool   `opts:"help=quiet logging, short=q`
-		Schema   string `opts:"help=schema to use when connecting, short=s`
-		Role     string `opts:"help=role to use when connecting, short=r`
-		Command  string `opts:"help=executes the command and exists, short=c`
-		Format   string `opts:help=default outputformat (sql, raw, expanded), short=f`
+	var opts struct {
+		Port        uint32 `description:"port to connect to" short:"p" long:"port" default:"50000"`
+		Host        string `description:"host to connect to" short:"h" long:"host" default:"127.0.0.1"`
+		Database    string `description:"database to connect to" short:"d" long:"database" default:"monetdb"`
+		UserName    string `description:"username to connect as" short:"u" long:"username" default:"monetdb"`
+		Verbose     bool   `description:"verbose logging" long:"verbose"`
+		Quiet       bool   `description:"quiet logging" long:"quiet"`
+		Schema      string `description:"schema to use when connecting" short:"s" long:"schema"`
+		Role        string `description:"role to use when connecting" short:"r" long:"role"`
+		Command     string `description:"executes the command and exists" short:"c"`
+		Format      string `description:"default output format (sql|raw|expanded)" short:"f" default:"sql"`
+		ExitOnError bool   `description:"exit on error" long:"exit-on-error"`
 	}
 
-	args := flags{
-		Port:     50000,
-		Host:     "127.0.0.1",
-		Database: "monetdb",
-		UserName: "monetdb",
-		Verbose:  false,
-		Quiet:    false,
-		Schema:   "",
-		Role:     "",
-		Command:  "",
-		Format:   "sql",
+	_, err := flags.Parse(&opts)
+	if err != nil {
+		os.Exit(1)
 	}
-	opts.Parse(&args)
 
 	log.SetOutput(os.Stdout)
-	if args.Verbose {
+	if opts.Verbose {
 		log.SetLevel(log.InfoLevel)
-	} else if args.Quiet {
+	} else if opts.Quiet {
 		log.SetLevel(log.FatalLevel)
 	} else {
 		log.SetLevel(log.ErrorLevel)
@@ -75,12 +67,12 @@ func main() {
 	log.WithFields(log.Fields{"context": "preferences dump"}).Infof("passwordFile = %s", preferences.passwordFile)
 
 	config := driver.Config{
-		Host:     fmt.Sprintf("%s:%d", args.Host, args.Port),
-		UserName: args.UserName,
-		Database: args.Database,
-		Password: getPassword(preferences, fmt.Sprintf("%s:%d:%s:%s:", args.Host, args.Port, args.Database, args.UserName)),
-		Schema:   args.Schema,
-		Role:     args.Role,
+		Host:     fmt.Sprintf("%s:%d", opts.Host, opts.Port),
+		UserName: opts.UserName,
+		Database: opts.Database,
+		Password: getPassword(preferences, fmt.Sprintf("%s:%d:%s:%s:", opts.Host, opts.Port, opts.Database, opts.UserName)),
+		Schema:   opts.Schema,
+		Role:     opts.Role,
 	}
 
 	conn, err := driver.Open(config)
@@ -91,17 +83,23 @@ func main() {
 		}).Fatal(err)
 	}
 
+	// TODO
+	promptText := "todo] "
+
 	context := NewContext(conn, os.Stdout)
 	defer context.Close()
 
-	format := strings.ToLower(args.Format)
+	context.prompt = []byte(promptText)
+	context.exitOnError = opts.ExitOnError
+
+	format := strings.ToLower(opts.Format)
 	if format == "raw" {
 		context.FormatRaw()
 	} else if format == "expanded" {
 		context.FormatExpanded()
 	}
 
-	if cmd := args.Command; cmd != "" {
+	if cmd := opts.Command; cmd != "" {
 		cmd = strings.TrimSpace(cmd)
 		if !strings.HasSuffix(cmd, ";") {
 			cmd = cmd + ";"
@@ -127,7 +125,7 @@ func main() {
 	}
 
 	for {
-		prompt.SetLeftPrompt("todo] ")
+		prompt.SetLeftPrompt(promptText)
 		line, err := prompt.GetLine()
 		if err != nil {
 			if err == libedit.ErrInterrupted {
@@ -179,14 +177,22 @@ func command(context *Context, line string) {
 // essentially called when a non-command line is entered in the main loop. Once
 // here, this function has its own readline loop to get the full statement.
 func statement(prompt libedit.EditLine, context *Context, line string) {
-	state := &state{}
+	state := &state{context: context}
 	for {
-		if state.add(line) {
+		complete, rest := state.add(line)
+		if complete {
 			// we have a full statement, execute it
-			statement := state.String()
-			prompt.AddHistory(statement)
+			sql := state.String()
+			prompt.AddHistory(sql)
 			prompt.SaveHistory()
-			query(context, statement)
+			query(context, sql)
+			if rest != "\n" {
+				// not great, but it works
+				context.Output(context.prompt)
+				context.Output([]byte(rest)[1:])
+				statement(prompt, context, rest)
+				return
+			}
 			return
 		}
 		prompt.SetLeftPrompt("")
@@ -199,6 +205,9 @@ func statement(prompt libedit.EditLine, context *Context, line string) {
 func query(context *Context, statement string) error {
 	if err := context.conn.Send("s", statement); err != nil {
 		handleDriverError(err) // can exit
+		if context.exitOnError {
+			os.Exit(1)
+		}
 		return err
 	}
 
@@ -213,12 +222,17 @@ func query(context *Context, statement string) error {
 
 	if err != nil {
 		handleDriverError(err)
+		if context.exitOnError {
+			os.Exit(1)
+		}
 	}
 	return err
 }
 
 // Tracks the state of our statement parsing
 type state struct {
+	context *Context
+
 	// Accumlats the stament (one line at a time)
 	bytes.Buffer
 
@@ -235,7 +249,7 @@ type state struct {
 // statement in here or not. A full statement is delimited by a semi-colon, but
 // that semi-colon can't be proceed by a \, and can't be inside a literal string
 // (either single or double quoted)
-func (s *state) add(line string) bool {
+func (s *state) add(line string) (bool, string) {
 	escape := s.escape
 	for i, c := range line {
 		if escape {
@@ -244,6 +258,13 @@ func (s *state) add(line string) bool {
 			continue
 		}
 		if c == '\\' {
+			// if the first character is \
+			// and we aren't in a literal
+			// than this is a command embedded in the SQL, which we'll allow (like psql)
+			if i == 0 && s.literal == 0 {
+				command(s.context, strings.TrimRight(line, "\n"))
+				return false, ""
+			}
 			escape = true
 			s.escape = true
 			continue
@@ -254,7 +275,7 @@ func (s *state) add(line string) bool {
 			// (thus the +1) semi colon
 			// TODO: figure out what to do with the rest
 			s.WriteString(line[:i+1])
-			return true
+			return true, line[i+1:]
 		}
 
 		if c == '"' || c == '\'' {
@@ -273,7 +294,7 @@ func (s *state) add(line string) bool {
 	// We don't have a full statement, add the line to our buffer as-is and get
 	// more from the user
 	s.WriteString(line)
-	return false
+	return false, ""
 }
 
 func handleDriverError(err error) {

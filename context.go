@@ -18,6 +18,8 @@ type Context struct {
 	conn        driver.Conn
 	preferences Preferences
 	format      uint8
+	prompt      []byte
+	exitOnError bool
 }
 
 func NewContext(conn driver.Conn, out io.Writer) *Context {

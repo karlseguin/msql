@@ -11,11 +11,10 @@ An alternative to mclient. Featuring:
 
 
 TODO:
-1. Multiline-pasting
-2. Accept input from stdin
-3. Add -f flag
-4. Add CSV output
-5. Custom prompt
-6. Add timing information
-7. Add exit-on-error flag
-8. Add expanded mode
+1. Accept input from stdin
+2. Add -f flag
+3. Add CSV output
+4. Custom prompt
+5. Add timing information
+6. Add expanded mode
+7. Add support for \d, \du, \d+ and maybe \c
