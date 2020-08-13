@@ -92,6 +92,7 @@ type QueryResult struct {
 	conn    Conn
 	fin     bool
 	lengths []int
+	scratch []byte
 	columns []string
 	meta    *Meta
 	buffer  bytes.Buffer
@@ -130,11 +131,17 @@ func newQueryResult(c Conn, data []byte, fin bool) (Result, error) {
 	lengthLine = lengthLine[2 : len(lengthLine)-len(" # length")]
 	lengthStrings := strings.Split(lengthLine, ",\t")
 
+	max := 0
 	lengths := make([]int, len(lengthStrings))
 	for i, l := range lengthStrings {
 		width, _ := strconv.Atoi(l)
 		lengths[i] = width
+		if width > max {
+			max = width
+		}
 	}
+	// try to reduce the amount we'll need to allocate for unquoting the strings
+	scratch := make([]byte, 3*max/2)
 
 	var buffer bytes.Buffer
 	buffer.Write(parts[5])
@@ -146,6 +153,7 @@ func newQueryResult(c Conn, data []byte, fin bool) (Result, error) {
 		lengths: lengths,
 		buffer:  buffer,
 		meta:    meta,
+		scratch: scratch,
 	}, nil
 }
 
@@ -208,7 +216,7 @@ func (r *QueryResult) asRows() [][]string {
 		values := strings.Split(string(row[2:len(row)-2]), ",\t")
 		for i, value := range values {
 			if value[0] == '"' {
-				values[i] = unquote(strings.Trim(value, "\""))
+				values[i] = unquote(strings.Trim(value, "\""), r.scratch[:0])
 			}
 		}
 		table[i] = values
@@ -222,18 +230,16 @@ func (r *QueryResult) asRows() [][]string {
 	return table
 }
 
-// taken from https://github.com/fajran/go-monetdb/blob/master/converter.go
-func unquote(s string) string {
-	if !strings.Contains(s, "\\") {
+// taken from strconv.Unquote
+func unquote(s string, buf []byte) string {
+	if strings.IndexByte(s, '\\') == -1 {
 		return s
 	}
 
 	var runeTmp [utf8.UTFMax]byte
-	buf := make([]byte, 0, 3*len(s)/2) // Try to avoid more allocations.
 	for len(s) > 0 {
 		c, multibyte, ss, err := strconv.UnquoteChar(s, '\'')
 		if err != nil {
-			fmt.Printf("E: %v\n -> %s\n", err, s)
 			return s
 		}
 		s = ss
