@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 type Result interface {
@@ -64,7 +65,7 @@ func (r EmptyResult) IsSimple() (bool, string) { return true, "" }
 
 type OKResult struct{ SimpleResult }
 
-func (r OKResult) IsSimple() (bool, string) { return true, "OK\n" }
+func (r OKResult) IsSimple() (bool, string) { return true, "OK\n\n" }
 
 type AffectedResult struct {
 	affected int
@@ -73,9 +74,9 @@ type AffectedResult struct {
 
 func (r AffectedResult) IsSimple() (bool, string) {
 	if r.affected == 1 {
-		return true, "1 row affected\n"
+		return true, "1 row affected\n\n"
 	}
-	return true, fmt.Sprintf("%d rows affected\n", r.affected)
+	return true, fmt.Sprintf("%d rows affected\n\n", r.affected)
 }
 
 // TODO: this should probably be an interface that can return data based on the
@@ -186,7 +187,13 @@ func (r *QueryResult) asRows() [][]string {
 	table := make([][]string, len(rows))
 	for i, row := range rows {
 		// 2 : len()-2   to strip out the leading and trailing '[\t' and '\t]'
-		table[i] = strings.Split(string(row[2:len(row)-2]), ",\t")
+		values := strings.Split(string(row[2:len(row)-2]), ",\t")
+		for i, value := range values {
+			if value[0] == '"' {
+				values[i] = unquote(strings.Trim(value, "\""))
+			}
+		}
+		table[i] = values
 	}
 
 	r.buffer.Reset()
@@ -195,4 +202,30 @@ func (r *QueryResult) asRows() [][]string {
 	}
 
 	return table
+}
+
+// taken from https://github.com/fajran/go-monetdb/blob/master/converter.go
+func unquote(s string) string {
+	// Is it trivial?  Avoid allocation.
+	if !strings.Contains(s, "\\") {
+		return s
+	}
+
+	var runeTmp [utf8.UTFMax]byte
+	buf := make([]byte, 0, 3*len(s)/2) // Try to avoid more allocations.
+	for len(s) > 0 {
+		c, multibyte, ss, err := strconv.UnquoteChar(s, '\'')
+		if err != nil {
+			fmt.Printf("E: %v\n -> %s\n", err, s)
+			return s
+		}
+		s = ss
+		if c < utf8.RuneSelf || !multibyte {
+			buf = append(buf, byte(c))
+		} else {
+			n := utf8.EncodeRune(runeTmp[:], c)
+			buf = append(buf, runeTmp[:n]...)
+		}
+	}
+	return string(buf)
 }

@@ -23,10 +23,10 @@ func (e Error) Error() string {
 	}
 
 	if e.Details == "" {
-		return fmt.Sprintf("%s - %s", e.Source, e.Message)
+		return fmt.Sprintf("%s - %s\n", e.Source, e.Message)
 	}
 
-	return fmt.Sprintf("%s - %s\n%s", e.Source, e.Message, e.Details)
+	return fmt.Sprintf("%s - %s\n%s\n", e.Source, e.Message, e.Details)
 }
 
 func driverError(message string) Error {

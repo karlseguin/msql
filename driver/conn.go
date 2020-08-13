@@ -117,8 +117,8 @@ func (c Conn) authenticate(config Config, tries uint8) (*url.URL, error) {
 	if strings.HasPrefix(reply, "^mapi:") {
 		u := strings.SplitN(reply, "\n", 1)[0]
 
-		// 1 - len(u) -1 to strip out the leading ^  and the trailing \n
-		url, err := url.Parse(u[1 : len(u)-1])
+		// 1 - len(u) -1 to strip out the leading ^mapi:  and the trailing \n
+		url, err := url.Parse(u[6 : len(u)-1])
 		if err != nil {
 			return nil, detailedDriverError("invalid login redirect", reply)
 		}

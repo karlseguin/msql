@@ -14,6 +14,7 @@ func Raw(conn driver.Conn, out io.Writer) error {
 		}
 		out.Write(data)
 		if fin {
+			out.Write([]byte("\n"))
 			return nil
 		}
 	}

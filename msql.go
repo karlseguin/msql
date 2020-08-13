@@ -35,22 +35,30 @@ func init() {
 
 func main() {
 	var opts struct {
-		Port        uint32 `description:"port to connect to" short:"p" long:"port" default:"50000"`
-		Host        string `description:"host to connect to" short:"h" long:"host" default:"127.0.0.1"`
-		Database    string `description:"database to connect to" short:"d" long:"database" default:"monetdb"`
-		UserName    string `description:"username to connect as" short:"u" long:"username" default:"monetdb"`
-		Verbose     bool   `description:"verbose logging" long:"verbose"`
-		Quiet       bool   `description:"quiet logging" long:"quiet"`
-		Schema      string `description:"schema to use when connecting" short:"s" long:"schema"`
-		Role        string `description:"role to use when connecting" short:"r" long:"role"`
-		Command     string `description:"executes the command and exists" short:"c"`
-		Format      string `description:"default output format (sql|raw|expanded)" short:"f" default:"sql"`
-		ExitOnError bool   `description:"exit on error" long:"exit-on-error"`
+		Port        uint32       `description:"port to connect to" short:"p" long:"port" default:"50000"`
+		Host        string       `description:"host to connect to" short:"h" long:"host" default:"127.0.0.1"`
+		Database    string       `description:"database to connect to" short:"d" long:"database" default:"monetdb"`
+		UserName    string       `description:"username to connect as" short:"u" long:"username" default:"monetdb"`
+		Verbose     bool         `description:"verbose logging" long:"verbose"`
+		Quiet       bool         `description:"quiet logging" long:"quiet"`
+		Schema      string       `description:"schema to use when connecting" short:"s" long:"schema"`
+		Role        string       `description:"role to use when connecting" short:"r" long:"role"`
+		Command     string       `description:"executes the command and exists" short:"c"`
+		Format      string       `description:"default output format (sql|raw|expanded)" short:"f" default:"sql"`
+		ExitOnError bool         `description:"exit on error" long:"exit-on-error"`
+		Help        func() error `description:"show this help screen" long:"help"`
 	}
 
-	_, err := flags.Parse(&opts)
-	if err != nil {
+	parser := flags.NewParser(&opts, flags.Default & ^flags.HelpFlag)
+	opts.Help = func() error {
+		parser.WriteHelp(os.Stdout)
 		os.Exit(1)
+		return nil
+	}
+	_, err := parser.Parse()
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(2)
 	}
 
 	log.SetOutput(os.Stdout)
@@ -164,12 +172,21 @@ func command(context *Context, line string) {
 		args = parts[1]
 	}
 
-	c := cmds[cmd]
-	if c == nil {
+	if c := cmds[cmd]; c != nil {
+		c.Execute(context, args)
+	} else if cmd == "\\d" || cmd == "\\d+" {
+		query(context, `
+			select s.name as Schema, t.name as Name, lower(tt.table_type_name) as Type
+			from sys.tables t
+			join sys.schemas s on t.schema_id = s.id
+			join sys.table_types tt on t.type = tt.table_type_id
+			where not t.system;
+		`)
+	} else if cmd == "\\du" {
+		query(context, "select * from sys.users;")
+	} else {
 		log.Error("invalid command, type \\h for a list of commands")
-		return
 	}
-	c.Execute(context, args)
 }
 
 // Statements are passed to the monetdb server for execution. Statements are
@@ -186,7 +203,7 @@ func statement(prompt libedit.EditLine, context *Context, line string) {
 			prompt.AddHistory(sql)
 			prompt.SaveHistory()
 			query(context, sql)
-			if rest != "\n" {
+			if rest != "" {
 				// not great, but it works
 				context.Output(context.prompt)
 				context.Output([]byte(rest)[1:])
@@ -275,7 +292,7 @@ func (s *state) add(line string) (bool, string) {
 			// (thus the +1) semi colon
 			// TODO: figure out what to do with the rest
 			s.WriteString(line[:i+1])
-			return true, line[i+1:]
+			return true, strings.TrimSpace(line[i+1:])
 		}
 
 		if c == '"' || c == '\'' {
@@ -308,5 +325,6 @@ func handleDriverError(err error) {
 	if netErr, ok := err.(net.Error); ok && !netErr.Temporary() {
 		log.Fatal(netErr)
 	}
+
 	log.Error(err)
 }

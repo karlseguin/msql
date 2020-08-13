@@ -15,6 +15,6 @@ TODO:
 2. Add -f flag
 3. Add CSV output
 4. Custom prompt
-5. Add timing information
+5. Add more timing information
 6. Add expanded mode
-7. Add support for \d, \du, \d+ and maybe \c
+7. Add support for \d+ and maybe \c
