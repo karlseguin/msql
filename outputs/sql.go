@@ -1,9 +1,7 @@
 package outputs
 
 import (
-	"fmt"
 	"io"
-	"time"
 
 	"github.com/karlseguin/msql/driver"
 	"github.com/olekukonko/tablewriter"
@@ -19,45 +17,33 @@ import (
 // 2 - Only render the header on the first table
 // 3 - Pad the first row of each frame to the max width to generate a consistent
 //     layout across the table renders.
-func SQL(conn driver.Conn, out io.Writer) error {
-	start := time.Now()
+func SQL(conn driver.Conn, out io.Writer) (*driver.Meta, error) {
 	result, err := conn.ReadResult()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if ok, data := result.IsSimple(); ok {
 		io.WriteString(out, data)
-		return nil
+		return nil, nil
 	}
 
 	_, err = renderSQLPage(result, true, out)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	for {
 		more, err := renderSQLPage(result, false, out)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if !more {
 			break
 		}
 	}
 
-	timing := fmt.Sprintf("%s", time.Since(start))
-
-	rowOut := "(1 row)\n"
-	rowCount := result.RowCount()
-	if rowCount != 1 {
-		rowOut = fmt.Sprintf("(%d rows)\n", rowCount)
-	}
-	io.WriteString(out, rowOut)
-	io.WriteString(out, timing)
-	out.Write([]byte("\n\n"))
-
-	return nil
+	return result.Meta(), nil
 }
 
 func renderSQLPage(result driver.Result, showHeaders bool, out io.Writer) (bool, error) {

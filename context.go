@@ -7,9 +7,10 @@ import (
 )
 
 const (
-	FORMAT_RAW      = 0
-	FORMAT_SQL      = 1
-	FORMAT_EXPANDED = 2
+	FORMAT_RAW      = "raw"
+	FORMAT_SQL      = "sql"
+	FORMAT_EXPANDED = "expanded"
+	FORMAT_TRASH    = "trash"
 )
 
 type Context struct {
@@ -17,7 +18,8 @@ type Context struct {
 	err         io.Writer
 	conn        driver.Conn
 	preferences Preferences
-	format      uint8
+	format      string
+	timing      bool
 	prompt      []byte
 	exitOnError bool
 }
@@ -34,16 +36,17 @@ func (c *Context) Close() {
 	c.conn.Close()
 }
 
-func (c *Context) Output(data []byte) {
+func (c *Context) Write(data []byte) {
 	c.out.Write(data)
 }
 
-func (c *Context) FormatRaw() {
-	c.format = FORMAT_RAW
+func (c *Context) WriteString(data string) {
+	io.WriteString(c.out, data)
 }
-func (c *Context) FormatSQL() {
-	c.format = FORMAT_SQL
+
+func (c *Context) Format(format string) {
+	c.format = format
 }
-func (c *Context) FormatExpanded() {
-	c.format = FORMAT_EXPANDED
+func (c *Context) Timing(on bool) {
+	c.timing = on
 }

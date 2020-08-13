@@ -11,9 +11,16 @@ import (
 type Result interface {
 	Columns() []string
 	Lengths() []int
-	RowCount() int
+	Meta() *Meta
 	Next() ([][]string, error)
 	IsSimple() (bool, string)
+}
+
+type Meta struct {
+	RowCount int
+	SqlTime  int
+	OptTime  int
+	RunTime  int
 }
 
 func newResult(c Conn) (Result, error) {
@@ -54,7 +61,7 @@ func newResult(c Conn) (Result, error) {
 
 type SimpleResult struct{}
 
-func (r SimpleResult) RowCount() int             { return 0 }
+func (r SimpleResult) Meta() *Meta               { return nil }
 func (r SimpleResult) Lengths() []int            { return nil }
 func (r SimpleResult) Columns() []string         { return nil }
 func (r SimpleResult) Next() ([][]string, error) { return nil, nil }
@@ -82,26 +89,37 @@ func (r AffectedResult) IsSimple() (bool, string) {
 // TODO: this should probably be an interface that can return data based on the
 // type of result.
 type QueryResult struct {
-	conn     Conn
-	fin      bool
-	lengths  []int
-	columns  []string
-	rowCount int
-	buffer   bytes.Buffer
+	conn    Conn
+	fin     bool
+	lengths []int
+	columns []string
+	meta    *Meta
+	buffer  bytes.Buffer
 }
 
 func newQueryResult(c Conn, data []byte, fin bool) (Result, error) {
 	parts := bytes.SplitN(data, []byte("\n"), 6)
 
 	metaLine := string(parts[0])
-	metaStrings := strings.SplitN(metaLine, " ", 4)
-	var rowCount int
-	if len(metaStrings) == 4 {
-		n, err := strconv.Atoi(metaStrings[2])
+	metaStrings := strings.Split(metaLine, " ")
+
+	var meta *Meta
+	if len(metaStrings) == 9 {
+		meta = new(Meta)
+		rowCount, err := strconv.Atoi(metaStrings[2])
 		if err != nil {
 			return nil, detailedDriverError("invalid query result (1)", metaLine)
 		}
-		rowCount = n
+		meta.RowCount = rowCount
+		if meta.RunTime, err = extractTiming(metaStrings[6]); err != nil {
+			return nil, detailedDriverError("invalid query result (2)", metaLine)
+		}
+		if meta.OptTime, err = extractTiming(metaStrings[7]); err != nil {
+			return nil, detailedDriverError("invalid query result (3)", metaLine)
+		}
+		if meta.SqlTime, err = extractTiming(metaStrings[8]); err != nil {
+			return nil, detailedDriverError("invalid query result (4)", metaLine)
+		}
 	}
 
 	columnLine := string(parts[2])
@@ -122,12 +140,12 @@ func newQueryResult(c Conn, data []byte, fin bool) (Result, error) {
 	buffer.Write(parts[5])
 
 	return &QueryResult{
-		conn:     c,
-		fin:      fin,
-		columns:  columns,
-		lengths:  lengths,
-		rowCount: rowCount,
-		buffer:   buffer,
+		conn:    c,
+		fin:     fin,
+		columns: columns,
+		lengths: lengths,
+		buffer:  buffer,
+		meta:    meta,
 	}, nil
 }
 
@@ -141,8 +159,8 @@ func (r *QueryResult) Lengths() []int {
 	return r.lengths
 }
 
-func (r *QueryResult) RowCount() int {
-	return r.rowCount
+func (r *QueryResult) Meta() *Meta {
+	return r.meta
 }
 
 func (r *QueryResult) Next() ([][]string, error) {
@@ -206,7 +224,6 @@ func (r *QueryResult) asRows() [][]string {
 
 // taken from https://github.com/fajran/go-monetdb/blob/master/converter.go
 func unquote(s string) string {
-	// Is it trivial?  Avoid allocation.
 	if !strings.Contains(s, "\\") {
 		return s
 	}
@@ -228,4 +245,12 @@ func unquote(s string) string {
 		}
 	}
 	return string(buf)
+}
+
+func extractTiming(value string) (int, error) {
+	n, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, err
+	}
+	return n, nil
 }

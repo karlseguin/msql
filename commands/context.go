@@ -1,8 +1,7 @@
 package commands
 
 type Context interface {
-	Output([]byte)
-	FormatRaw()
-	FormatSQL()
-	FormatExpanded()
+	WriteString(string)
+	Format(string)
+	Timing(bool)
 }

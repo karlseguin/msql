@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/jessevdk/go-flags"
 	"github.com/karlseguin/msql/commands"
@@ -31,6 +32,7 @@ func init() {
 	cmds["\\?"] = commands.Help{}
 	cmds["\\f"] = commands.Format{}
 	cmds["\\x"] = commands.Expanded{}
+	cmds["\\timing"] = commands.Timing{}
 }
 
 func main() {
@@ -71,6 +73,7 @@ func main() {
 	}
 
 	preferences := loadPreferences()
+	log.WithFields(log.Fields{"context": "preferences dump"}).Infof("timing = %t", preferences.timing)
 	log.WithFields(log.Fields{"context": "preferences dump"}).Infof("historyFile = %s", preferences.historyFile)
 	log.WithFields(log.Fields{"context": "preferences dump"}).Infof("passwordFile = %s", preferences.passwordFile)
 
@@ -97,15 +100,11 @@ func main() {
 	context := NewContext(conn, os.Stdout)
 	defer context.Close()
 
+	context.Timing(preferences.timing)
+	context.Format(strings.ToLower(opts.Format))
+
 	context.prompt = []byte(promptText)
 	context.exitOnError = opts.ExitOnError
-
-	format := strings.ToLower(opts.Format)
-	if format == "raw" {
-		context.FormatRaw()
-	} else if format == "expanded" {
-		context.FormatExpanded()
-	}
 
 	if cmd := opts.Command; cmd != "" {
 		cmd = strings.TrimSpace(cmd)
@@ -205,8 +204,8 @@ func statement(prompt libedit.EditLine, context *Context, line string) {
 			query(context, sql)
 			if rest != "" {
 				// not great, but it works
-				context.Output(context.prompt)
-				context.Output([]byte(rest)[1:])
+				context.Write(context.prompt)
+				context.Write([]byte(rest)[1:])
 				statement(prompt, context, rest)
 				return
 			}
@@ -229,12 +228,16 @@ func query(context *Context, statement string) error {
 	}
 
 	var err error
+	var meta *driver.Meta
+	start := time.Now()
 	if context.format == FORMAT_RAW {
 		err = outputs.Raw(context.conn, context.out)
 	} else if context.format == FORMAT_EXPANDED {
 		err = outputs.Expanded(context.conn, context.out)
+	} else if context.format == FORMAT_TRASH {
+		err = outputs.Trash(context.conn)
 	} else {
-		err = outputs.SQL(context.conn, context.out)
+		meta, err = outputs.SQL(context.conn, context.out)
 	}
 
 	if err != nil {
@@ -243,6 +246,21 @@ func query(context *Context, statement string) error {
 			os.Exit(1)
 		}
 	}
+	duration := time.Since(start)
+
+	// output the meta data
+	if meta != nil {
+		if meta.RowCount == 1 {
+			context.WriteString("(1 row)\n")
+		} else {
+			context.WriteString(fmt.Sprintf("(%d rows)\n", meta.RowCount))
+		}
+		context.WriteString(fmt.Sprintf("\nsql:%0.3f opt:%0.3f run:%0.3f clk:%s\n", float32(meta.SqlTime)/1000, float32(meta.OptTime)/1000, float32(meta.RunTime)/1000, duration))
+
+	} else if context.timing {
+		context.WriteString(fmt.Sprintf("\nclk:%s\n", duration))
+	}
+
 	return err
 }
 

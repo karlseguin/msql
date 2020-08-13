@@ -13,21 +13,19 @@ import (
 type Preferences struct {
 	historyFile  string
 	passwordFile string
+	timing       bool
 }
 
 func loadPreferences() Preferences {
 	userConfigDir, err := os.UserConfigDir()
 	if err != nil {
 		log.WithFields(log.Fields{"context": "failed to load config dir"}).Error(err)
-		return Preferences{
-			historyFile:  "",
-			passwordFile: "",
-		}
+		return Preferences{}
 	}
 
 	configDir := path.Join(userConfigDir, "msql")
 	os.Mkdir(configDir, 0750)
-	configFile := path.Join(configDir, "pref")
+	configFile := path.Join(configDir, "config")
 
 	preferences := Preferences{
 		historyFile:  path.Join(configDir, "history"),
@@ -51,7 +49,7 @@ func loadPreferences() Preferences {
 			continue
 		}
 		parts := strings.SplitN(line, "=", 2)
-		if parts != nil {
+		if len(parts) != 2 {
 			log.WithFields(log.Fields{"context": configFile, "line": line}).Info("invalid property")
 			continue
 		}
@@ -63,6 +61,10 @@ func loadPreferences() Preferences {
 			break
 		case "passwordFile":
 			preferences.passwordFile = value
+			break
+		case "timing":
+			value = strings.ToLower(value)
+			preferences.timing = value == "on" || value == "1" || value == "true"
 			break
 		default:
 			log.WithFields(log.Fields{"context": configFile, "key": parts[0]}).Info("unknwon preference key")
