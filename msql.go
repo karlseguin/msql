@@ -107,11 +107,18 @@ func main() {
 
 	if cmd := opts.Command; cmd != "" {
 		cmd = strings.TrimSpace(cmd)
-		if !strings.HasSuffix(cmd, ";") {
-			cmd = cmd + ";"
-		}
-		if err := query(context, cmd); err != nil {
-			os.Exit(1)
+		queries := strings.Split(cmd, ";")
+		for i, q := range queries {
+			if q == "" {
+				continue
+			}
+			if !strings.HasSuffix(q, ";") {
+				q += ";"
+			}
+			if i > 0 {
+				context.WriteString("\n")
+			}
+			query(context, q)
 		}
 		os.Exit(0)
 	}
@@ -217,13 +224,13 @@ func statement(prompt libedit.EditLine, context *Context, line string) {
 
 // The statement function has collected a full statement, send it to the server
 // and deal with the response
-func query(context *Context, statement string) error {
+func query(context *Context, statement string) {
 	if err := context.conn.Send("s", statement); err != nil {
 		handleDriverError(err) // can exit
 		if context.exitOnError {
 			os.Exit(1)
 		}
-		return err
+		return
 	}
 
 	var err error
@@ -259,8 +266,6 @@ func query(context *Context, statement string) error {
 	} else if context.timing {
 		context.WriteString(fmt.Sprintf("\nclk:%s\n", duration))
 	}
-
-	return err
 }
 
 // Tracks the state of our statement parsing

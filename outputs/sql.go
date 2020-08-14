@@ -1,7 +1,6 @@
 package outputs
 
 import (
-	"fmt"
 	"io"
 
 	"github.com/karlseguin/msql/driver"
@@ -39,7 +38,6 @@ func SQL(conn driver.Conn, out io.Writer) (*driver.Meta, error) {
 			lengths[i] = columnLength
 		}
 	}
-	fmt.Println(lengths)
 
 	_, err = renderSQLPage(result, lengths, true, out)
 	if err != nil {
