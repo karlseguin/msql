@@ -6,16 +6,17 @@ import (
 	"github.com/karlseguin/msql/driver"
 )
 
-func Raw(conn driver.Conn, out io.Writer) error {
+func Raw(conn driver.Conn, out io.Writer) (*driver.Meta, error) {
+	data, fin, err := conn.ReadFrame()
+	meta := driver.NewMeta(data)
 	for {
-		data, fin, err := conn.ReadFrame()
 		if err != nil {
-			return err
+			return nil, err
 		}
 		out.Write(data)
 		if fin {
-			out.Write([]byte("\n"))
-			return nil
+			return meta, nil
 		}
+		data, fin, err = conn.ReadFrame()
 	}
 }

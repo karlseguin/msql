@@ -1,6 +1,7 @@
 package outputs
 
 import (
+	"fmt"
 	"io"
 
 	"github.com/karlseguin/msql/driver"
@@ -23,30 +24,42 @@ func SQL(conn driver.Conn, out io.Writer) (*driver.Meta, error) {
 		return nil, err
 	}
 
+	meta := result.Meta()
 	if ok, data := result.IsSimple(); ok {
 		io.WriteString(out, data)
-		return nil, nil
+		return meta, nil
 	}
 
-	_, err = renderSQLPage(result, true, out)
+	// We need to pad to whichever is wider: the column width or value widths
+	columns := result.Columns()
+	lengths := result.Lengths()
+	for i, length := range lengths {
+		columnLength := len(columns[i])
+		if columnLength > length {
+			lengths[i] = columnLength
+		}
+	}
+	fmt.Println(lengths)
+
+	_, err = renderSQLPage(result, lengths, true, out)
 	if err != nil {
 		return nil, err
 	}
 
 	for {
-		more, err := renderSQLPage(result, false, out)
+		more, err := renderSQLPage(result, lengths, false, out)
 		if err != nil {
-			return nil, err
+			return meta, err
 		}
 		if !more {
 			break
 		}
 	}
 
-	return result.Meta(), nil
+	return meta, nil
 }
 
-func renderSQLPage(result driver.Result, showHeaders bool, out io.Writer) (bool, error) {
+func renderSQLPage(result driver.Result, lengths []int, showHeaders bool, out io.Writer) (bool, error) {
 	data, err := result.Next()
 	if err != nil {
 		return false, err
@@ -57,10 +70,8 @@ func renderSQLPage(result driver.Result, showHeaders bool, out io.Writer) (bool,
 	}
 
 	first := data[0]
-	lengths := result.Lengths()
 	for i, d := range first {
-		// not exactly sure why +2, maybe the borders..what is this, html?
-		first[i] = tablewriter.PadRight(d, " ", lengths[i]+2)
+		first[i] = tablewriter.PadRight(d, " ", lengths[i])
 	}
 	data[0] = first
 
@@ -70,6 +81,7 @@ func renderSQLPage(result driver.Result, showHeaders bool, out io.Writer) (bool,
 	table.SetHeaderLine(true)
 	table.SetAutoWrapText(false)
 	table.SetReflowDuringAutoWrap(false)
+	table.SetAlignment(tablewriter.ALIGN_LEFT)
 	table.SetBorders(tablewriter.Border{Left: false, Top: false, Right: false, Bottom: false})
 	table.SetCenterSeparator("|")
 

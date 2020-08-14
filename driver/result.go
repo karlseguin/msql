@@ -2,7 +2,6 @@ package driver
 
 import (
 	"bytes"
-	"fmt"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -23,6 +22,39 @@ type Meta struct {
 	RunTime  int
 }
 
+// exposed this way so that all outputs (including raw and trash) can use it
+func NewMeta(data []byte) *Meta {
+	type Indexes struct {
+		max      int
+		rowCount int
+		runTime  int
+		optTime  int
+		sqlTime  int
+	}
+
+	var indexes *Indexes
+	if bytes.HasPrefix(data, []byte("&1 ")) {
+		indexes = &Indexes{9, 2, 6, 7, 8}
+	} else if bytes.HasPrefix(data, []byte("&2 ")) {
+		indexes = &Indexes{7, 1, 4, 5, 6}
+	} else {
+		return nil // some response have no meta
+	}
+
+	parts := bytes.SplitN(data, []byte(" "), indexes.max)
+	if len(parts) < indexes.max {
+		return nil
+	}
+
+	meta := new(Meta)
+	meta.RowCount, _ = strconv.Atoi(string(parts[indexes.rowCount]))
+	meta.RunTime, _ = strconv.Atoi(string(parts[indexes.runTime]))
+	meta.OptTime, _ = strconv.Atoi(string(parts[indexes.optTime]))
+	meta.SqlTime, _ = strconv.Atoi(string(parts[indexes.sqlTime]))
+
+	return meta
+}
+
 func newResult(c Conn) (Result, error) {
 	data, fin, err := c.ReadFrame()
 	if err != nil {
@@ -30,41 +62,39 @@ func newResult(c Conn) (Result, error) {
 	}
 
 	if len(data) > 0 && data[0] == '!' {
-		return nil, monetDBError(string(data[1:]))
+		// strip out leading ! and trailing \n
+		return nil, monetDBError(string(data[1 : len(data)-1]))
 	}
 
 	if len(data) == 0 {
 		return EmptyResult{}, nil
 	}
 
+	if bytes.HasPrefix(data, []byte("&3 ")) {
+		return OKResult{}, nil
+	}
+
+	meta := NewMeta(data)
+
 	if bytes.HasPrefix(data, []byte("&1 ")) {
-		return newQueryResult(c, data, fin)
+		return newQueryResult(c, data, fin, meta)
 	}
 
 	if bytes.HasPrefix(data, []byte("&2 ")) {
-		parts := bytes.SplitN(data[3:], []byte(" "), 2)
-		if len(parts) == 2 {
-			n, err := strconv.Atoi(string(parts[0]))
-			if err != nil {
-				return nil, detailedDriverError("invalid upsert response", string(data))
-			}
-			return AffectedResult{affected: n}, nil
-		}
-	}
-
-	if bytes.HasPrefix(data, []byte("&3 ")) {
-		return OKResult{}, nil
+		return OKResult{SimpleResult: SimpleResult{meta: meta}}, nil
 	}
 
 	return nil, detailedDriverError("unknown response", string(data))
 }
 
-type SimpleResult struct{}
+type SimpleResult struct {
+	meta *Meta
+}
 
-func (r SimpleResult) Meta() *Meta               { return nil }
-func (r SimpleResult) Lengths() []int            { return nil }
-func (r SimpleResult) Columns() []string         { return nil }
-func (r SimpleResult) Next() ([][]string, error) { return nil, nil }
+func (r SimpleResult) Meta() *Meta               { return r.meta }
+func (_ SimpleResult) Lengths() []int            { return nil }
+func (_ SimpleResult) Columns() []string         { return nil }
+func (_ SimpleResult) Next() ([][]string, error) { return nil, nil }
 
 type EmptyResult struct{ SimpleResult }
 
@@ -72,19 +102,7 @@ func (r EmptyResult) IsSimple() (bool, string) { return true, "" }
 
 type OKResult struct{ SimpleResult }
 
-func (r OKResult) IsSimple() (bool, string) { return true, "OK\n\n" }
-
-type AffectedResult struct {
-	affected int
-	SimpleResult
-}
-
-func (r AffectedResult) IsSimple() (bool, string) {
-	if r.affected == 1 {
-		return true, "1 row affected\n\n"
-	}
-	return true, fmt.Sprintf("%d rows affected\n\n", r.affected)
-}
+func (r OKResult) IsSimple() (bool, string) { return true, "OK\n" }
 
 // TODO: this should probably be an interface that can return data based on the
 // type of result.
@@ -98,30 +116,8 @@ type QueryResult struct {
 	buffer  bytes.Buffer
 }
 
-func newQueryResult(c Conn, data []byte, fin bool) (Result, error) {
+func newQueryResult(c Conn, data []byte, fin bool, meta *Meta) (Result, error) {
 	parts := bytes.SplitN(data, []byte("\n"), 6)
-
-	metaLine := string(parts[0])
-	metaStrings := strings.Split(metaLine, " ")
-
-	var meta *Meta
-	if len(metaStrings) == 9 {
-		meta = new(Meta)
-		rowCount, err := strconv.Atoi(metaStrings[2])
-		if err != nil {
-			return nil, detailedDriverError("invalid query result (1)", metaLine)
-		}
-		meta.RowCount = rowCount
-		if meta.RunTime, err = extractTiming(metaStrings[6]); err != nil {
-			return nil, detailedDriverError("invalid query result (2)", metaLine)
-		}
-		if meta.OptTime, err = extractTiming(metaStrings[7]); err != nil {
-			return nil, detailedDriverError("invalid query result (3)", metaLine)
-		}
-		if meta.SqlTime, err = extractTiming(metaStrings[8]); err != nil {
-			return nil, detailedDriverError("invalid query result (4)", metaLine)
-		}
-	}
 
 	columnLine := string(parts[2])
 	columnLine = columnLine[2 : len(columnLine)-len(" # name")]
@@ -198,6 +194,11 @@ func (r *QueryResult) Next() ([][]string, error) {
 
 func (r *QueryResult) asRows() [][]string {
 	data := r.buffer.Bytes()
+	// a frame could start with the newline from the last row, ignore it
+	// else our split will put an empty row at the front
+	if data[0] == '\n' {
+		data = data[1:]
+	}
 	rows := bytes.Split(data, []byte("\n"))
 
 	var partialRow []byte
@@ -207,7 +208,7 @@ func (r *QueryResult) asRows() [][]string {
 	// the next ReadFrame (on the next call to our Next() function above)
 	if !bytes.HasSuffix(rows[lastRowIndex], []byte("\t]")) {
 		partialRow = rows[lastRowIndex]
-		rows = rows[0:lastRowIndex]
+		rows = rows[:lastRowIndex]
 	}
 
 	table := make([][]string, len(rows))
@@ -251,12 +252,4 @@ func unquote(s string, buf []byte) string {
 		}
 	}
 	return string(buf)
-}
-
-func extractTiming(value string) (int, error) {
-	n, err := strconv.Atoi(value)
-	if err != nil {
-		return 0, err
-	}
-	return n, nil
 }

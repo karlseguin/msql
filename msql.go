@@ -59,8 +59,7 @@ func main() {
 	}
 	_, err := parser.Parse()
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(2)
+		log.Fatal(err)
 	}
 
 	log.SetOutput(os.Stdout)
@@ -231,11 +230,11 @@ func query(context *Context, statement string) error {
 	var meta *driver.Meta
 	start := time.Now()
 	if context.format == FORMAT_RAW {
-		err = outputs.Raw(context.conn, context.out)
+		meta, err = outputs.Raw(context.conn, context.out)
 	} else if context.format == FORMAT_EXPANDED {
-		err = outputs.Expanded(context.conn, context.out)
+		meta, err = outputs.Expanded(context.conn, context.out)
 	} else if context.format == FORMAT_TRASH {
-		err = outputs.Trash(context.conn)
+		meta, err = outputs.Trash(context.conn)
 	} else {
 		meta, err = outputs.SQL(context.conn, context.out)
 	}
@@ -343,6 +342,5 @@ func handleDriverError(err error) {
 	if netErr, ok := err.(net.Error); ok && !netErr.Temporary() {
 		log.Fatal(netErr)
 	}
-
 	log.Error(err)
 }
