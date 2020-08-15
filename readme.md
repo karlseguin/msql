@@ -11,8 +11,6 @@ An alternative to mclient. Featuring:
 
 
 TODO:
-1. Accept input from stdin
-2. Add -f flag
 3. Add CSV output
 4. Custom prompt
 5. Add more timing information

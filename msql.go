@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net"
 	"os"
 	"strings"
@@ -46,9 +47,10 @@ func main() {
 		Schema      string       `description:"schema to use when connecting" short:"s" long:"schema"`
 		Role        string       `description:"role to use when connecting" short:"r" long:"role"`
 		Command     string       `description:"executes the command and exists" short:"c"`
-		Format      string       `description:"default output format (sql|raw|expanded)" short:"f" default:"sql"`
+		Format      string       `description:"default output format (sql|raw|expanded)" default:"sql"`
 		ExitOnError bool         `description:"exit on error" long:"exit-on-error"`
 		Help        func() error `description:"show this help screen" long:"help"`
+		File        string       `description:"file to exist" long:"file" short:"f"`
 	}
 
 	parser := flags.NewParser(&opts, flags.Default & ^flags.HelpFlag)
@@ -93,36 +95,19 @@ func main() {
 		}).Fatal(err)
 	}
 
-	// TODO
-	promptText := "todo] "
-
 	context := NewContext(conn, os.Stdout)
 	defer context.Close()
 
 	context.Timing(preferences.timing)
 	context.Format(strings.ToLower(opts.Format))
-
-	context.prompt = []byte(promptText)
 	context.exitOnError = opts.ExitOnError
 
-	if cmd := opts.Command; cmd != "" {
-		cmd = strings.TrimSpace(cmd)
-		queries := strings.Split(cmd, ";")
-		for i, q := range queries {
-			if q == "" {
-				continue
-			}
-			if !strings.HasSuffix(q, ";") {
-				q += ";"
-			}
-			if i > 0 {
-				context.WriteString("\n")
-			}
-			query(context, q)
-		}
-		os.Exit(0)
-	}
+	// handles -c or -f argument or stdin input
+	conditionallyExecuteAndExit(opts.Command, opts.File, context)
 
+	// TODO
+	promptText := "todo] "
+	context.prompt = []byte(promptText)
 	prompt, err := libedit.InitFiles("msql", true, os.Stdin, os.Stdout, os.Stderr)
 	if err != nil {
 		log.WithFields(log.Fields{"context": "libedit initialization"}).Fatal(err)
@@ -348,4 +333,48 @@ func handleDriverError(err error) {
 		log.Fatal(netErr)
 	}
 	log.Error(err)
+}
+
+func conditionallyExecuteAndExit(cArg string, fArg string, context *Context) {
+	var input string
+	if cArg != "" {
+		input = strings.TrimSpace(cArg)
+	} else if fArg != "" {
+		data, err := ioutil.ReadFile(fArg)
+		if err != nil {
+			log.WithFields(log.Fields{"context": "fArg read"}).Fatal(err)
+		}
+		input = string(data)
+	} else {
+		fi, err := os.Stdin.Stat()
+		if err != nil {
+			log.WithFields(log.Fields{"context": "stat stdin"}).Error(err)
+		} else if fi.Mode()&os.ModeNamedPipe != 0 {
+			data, err := ioutil.ReadAll(os.Stdin)
+			if err != nil {
+				log.WithFields(log.Fields{"context": "stdin read"}).Fatal(err)
+			}
+			input = string(data)
+		}
+	}
+
+	// no -c, -f or stdin
+	if input == "" {
+		return
+	}
+
+	queries := strings.Split(input, ";")
+	for i, q := range queries {
+		if q == "" {
+			continue
+		}
+		if !strings.HasSuffix(q, ";") {
+			q += ";"
+		}
+		if i > 0 {
+			context.WriteString("\n")
+		}
+		query(context, q)
+	}
+	os.Exit(0)
 }
