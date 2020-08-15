@@ -13,14 +13,16 @@ import (
 type Preferences struct {
 	historyFile  string
 	passwordFile string
+	prompt       string
 	timing       bool
 }
 
 func loadPreferences() Preferences {
+	defaultPrompt := "${host}@${database} => "
 	userConfigDir, err := os.UserConfigDir()
 	if err != nil {
 		log.WithFields(log.Fields{"context": "failed to load config dir"}).Error(err)
-		return Preferences{}
+		return Preferences{prompt: defaultPrompt}
 	}
 
 	configDir := path.Join(userConfigDir, "msql")
@@ -30,6 +32,7 @@ func loadPreferences() Preferences {
 	preferences := Preferences{
 		historyFile:  path.Join(configDir, "history"),
 		passwordFile: path.Join(configDir, ".pass"),
+		prompt:       defaultPrompt,
 	}
 
 	file, err := ioutil.ReadFile(configFile)
@@ -65,6 +68,9 @@ func loadPreferences() Preferences {
 		case "timing":
 			value = strings.ToLower(value)
 			preferences.timing = value == "on" || value == "1" || value == "true"
+			break
+		case "prompt":
+			preferences.prompt = strings.Trim(value, "\"")
 			break
 		default:
 			log.WithFields(log.Fields{"context": configFile, "key": parts[0]}).Info("unknwon preference key")

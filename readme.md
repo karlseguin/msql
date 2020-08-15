@@ -11,8 +11,5 @@ An alternative to mclient. Featuring:
 
 
 TODO:
-3. Add CSV output
-4. Custom prompt
-5. Add more timing information
-6. Add expanded mode
-7. Add support for \d+ and maybe \c
+1. Add CSV output
+2. Add support for \d+ and maybe \c

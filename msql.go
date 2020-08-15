@@ -74,9 +74,6 @@ func main() {
 	}
 
 	preferences := loadPreferences()
-	log.WithFields(log.Fields{"context": "preferences dump"}).Infof("timing = %t", preferences.timing)
-	log.WithFields(log.Fields{"context": "preferences dump"}).Infof("historyFile = %s", preferences.historyFile)
-	log.WithFields(log.Fields{"context": "preferences dump"}).Infof("passwordFile = %s", preferences.passwordFile)
 
 	config := driver.Config{
 		Host:     fmt.Sprintf("%s:%d", opts.Host, opts.Port),
@@ -105,9 +102,7 @@ func main() {
 	// handles -c or -f argument or stdin input
 	conditionallyExecuteAndExit(opts.Command, opts.File, context)
 
-	// TODO
-	promptText := "todo] "
-	context.prompt = []byte(promptText)
+	promptText := context.SetPrompt(preferences.prompt)
 	prompt, err := libedit.InitFiles("msql", true, os.Stdin, os.Stdout, os.Stderr)
 	if err != nil {
 		log.WithFields(log.Fields{"context": "libedit initialization"}).Fatal(err)
@@ -118,11 +113,14 @@ func main() {
 	if err := prompt.UseHistory(500, true); err != nil {
 		log.WithFields(log.Fields{"context": "libedit use history"}).Error(err)
 	} else if preferences.historyFile != "" {
-		prompt.LoadHistory(preferences.historyFile)
-		prompt.SetAutoSaveHistory(preferences.historyFile, false)
+		historyFile := context.template(preferences.historyFile)
+		prompt.LoadHistory(historyFile)
+		prompt.SetAutoSaveHistory(historyFile, false)
 	}
 
 	for {
+		// we have to write the prompt ourselves incase it contains color codes (not
+		// sure why they don't work through libedit)
 		prompt.SetLeftPrompt(promptText)
 		line, err := prompt.GetLine()
 		if err != nil {
@@ -195,7 +193,7 @@ func statement(prompt libedit.EditLine, context *Context, line string) {
 			query(context, sql)
 			if rest != "" {
 				// not great, but it works
-				context.Write(context.prompt)
+				context.Prompt()
 				context.Write([]byte(rest)[1:])
 				statement(prompt, context, rest)
 				return
