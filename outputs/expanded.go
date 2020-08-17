@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/karlseguin/msql/driver"
+	"github.com/olekukonko/tablewriter"
 )
 
 func Expanded(conn driver.Conn, out io.Writer) (*driver.Meta, error) {
@@ -19,9 +20,16 @@ func Expanded(conn driver.Conn, out io.Writer) (*driver.Meta, error) {
 		return meta, nil
 	}
 
+	maxWidth := 0
+	for _, c := range result.Columns() {
+		if len(c) > maxWidth {
+			maxWidth = len(c)
+		}
+	}
+
 	columns := make([][]byte, len(result.Columns()))
 	for i, column := range result.Columns() {
-		columns[i] = []byte("\n" + column + " | ")
+		columns[i] = []byte("\n" + tablewriter.PadRight(column, " ", maxWidth) + " | ")
 	}
 
 	rowIndex := 1
