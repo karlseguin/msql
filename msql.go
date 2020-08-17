@@ -19,7 +19,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-const VERSION = "0.0.1"
+const VERSION = "0.0.2"
 
 type Command interface {
 	Execute(context commands.Context, arguments string)
@@ -148,7 +148,7 @@ func main() {
 
 		if line[0] == '\\' {
 			// any line that starts with \ is treated as a command
-			command(context, strings.TrimRight(line, "\n"))
+			command(prompt, context, strings.TrimRight(line, "\n"))
 		} else {
 			// any other line is treatment as the start of a statement
 			statement(prompt, context, line)
@@ -157,7 +157,7 @@ func main() {
 }
 
 // Commands are processed by this client itself. They're always single-lined.
-func command(context *Context, line string) {
+func command(prompt libedit.EditLine, context *Context, line string) {
 	if len(line) == 0 {
 		return
 	}
@@ -186,6 +186,8 @@ func command(context *Context, line string) {
 	} else {
 		log.Error("invalid command, type \\h for a list of commands")
 	}
+	prompt.AddHistory(line)
+	prompt.SaveHistory()
 }
 
 // Statements are passed to the monetdb server for execution. Statements are
@@ -195,7 +197,7 @@ func command(context *Context, line string) {
 func statement(prompt libedit.EditLine, context *Context, line string) {
 	state := &state{context: context}
 	for {
-		complete, rest := state.add(line)
+		complete, rest := state.add(prompt, line)
 		if complete {
 			// we have a full statement, execute it
 			sql := state.String()
@@ -282,7 +284,7 @@ type state struct {
 // statement in here or not. A full statement is delimited by a semi-colon, but
 // that semi-colon can't be proceed by a \, and can't be inside a literal string
 // (either single or double quoted)
-func (s *state) add(line string) (bool, string) {
+func (s *state) add(prompt libedit.EditLine, line string) (bool, string) {
 	escape := s.escape
 	for i, c := range line {
 		if escape {
@@ -295,7 +297,7 @@ func (s *state) add(line string) (bool, string) {
 			// and we aren't in a literal
 			// than this is a command embedded in the SQL, which we'll allow (like psql)
 			if i == 0 && s.literal == 0 {
-				command(s.context, strings.TrimRight(line, "\n"))
+				command(prompt, s.context, strings.TrimRight(line, "\n"))
 				return false, ""
 			}
 			escape = true

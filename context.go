@@ -38,13 +38,34 @@ type Context struct {
 }
 
 func NewContext(conn driver.Conn, out io.Writer) *Context {
-	user := extractScalar(conn, "sselect current_user;", "unknown")
-	role := extractScalar(conn, "sselect current_role;", "unknown")
-	schema := extractScalar(conn, "sselect current_schema;", "unknown")
-	version := extractScalar(conn, "sselect value from sys.env() where name = 'monet_version';", "unknown")
-	release := extractScalar(conn, "sselect value from sys.env() where name = 'monet_release';", "unknown")
+	userRoleSchema, err := conn.QueryRow("select current_user, current_role, current_schema")
+	if err != nil {
+		log.WithFields(log.Fields{"context": "build context (1)"}).Error(err)
+		userRoleSchema = []string{"unknown", "unknown", "unknown"}
+	}
 
-	urlString := extractScalar(conn, "sselect value from sys.env() where name = 'merovingian_uri';", "//unknown/unknown")
+	version := "unknown"
+	release := "unknown"
+	urlString := "//unknown/unknown"
+	envs, err := conn.QueryRows("select name, value from sys.env() where name in ('merovingian_uri', 'monet_release', 'monet_version')")
+	if err != nil {
+		log.WithFields(log.Fields{"context": "build context (2)"}).Error(err)
+	}
+
+	for _, env := range envs {
+		switch env[0] {
+		case "merovingian_uri":
+			urlString = env[1]
+			break
+		case "monet_release":
+			release = env[1]
+			break
+		case "monet_version":
+			version = env[1]
+			break
+		}
+	}
+
 	if strings.HasPrefix(urlString, "mapi:") {
 		urlString = urlString[5:]
 	}
@@ -66,9 +87,9 @@ func NewContext(conn driver.Conn, out io.Writer) *Context {
 		out:      out,
 		conn:     conn,
 		format:   FORMAT_SQL,
-		user:     user,
-		role:     role,
-		schema:   schema,
+		user:     userRoleSchema[0],
+		role:     userRoleSchema[1],
+		schema:   userRoleSchema[2],
 		host:     host,
 		port:     port,
 		database: database,

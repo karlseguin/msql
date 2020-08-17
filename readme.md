@@ -41,6 +41,3 @@ When `timing` is `on` additional timing information is shown after each query.
 
 `passwordFile` points to a file that matches the format of .pgpass. You can point this to your .pgpass file if you want  (e.g.: `/home/karl/.pgpass`).
 
-
-
-`$XDG_CONFIG_HOME/msql/config` is a key value list of settings

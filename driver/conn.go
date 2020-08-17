@@ -171,6 +171,25 @@ func (c Conn) ReadResult() (Result, error) {
 	return newResult(c)
 }
 
+func (c Conn) QueryRow(sql string) ([]string, error) {
+	rows, err := c.QueryRows(sql)
+	if err != nil || len(rows) == 0 {
+		return nil, err
+	}
+	return rows[0], nil
+}
+
+func (c Conn) QueryRows(sql string) ([][]string, error) {
+	if err := c.Send("s", sql, ";"); err != nil {
+		return nil, err
+	}
+	r, err := newResult(c)
+	if err != nil {
+		return nil, err
+	}
+	return r.Rows()
+}
+
 func (c Conn) readMessageString() (string, error) {
 	data, err := c.readMessage()
 	if err != nil {

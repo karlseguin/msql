@@ -39,13 +39,20 @@ func SQL(conn driver.Conn, out io.Writer) (*driver.Meta, error) {
 		}
 	}
 
-	_, err = renderSQLPage(result, lengths, true, out)
+	// numeric values are padded left
+	// other values are padded right
+	padRight := make([]bool, len(result.Types()))
+	for i, tpe := range result.Types() {
+		padRight[i] = !(tpe == "tinyint" || tpe == "smallint" || tpe == "int" || tpe == "bigint" || tpe == "hugeint" || tpe == "real" || tpe == "float" || tpe == "double")
+	}
+
+	_, err = renderSQLPage(result, padRight, lengths, true, out)
 	if err != nil {
 		return nil, err
 	}
 
 	for {
-		more, err := renderSQLPage(result, lengths, false, out)
+		more, err := renderSQLPage(result, padRight, lengths, false, out)
 		if err != nil {
 			return meta, err
 		}
@@ -57,7 +64,7 @@ func SQL(conn driver.Conn, out io.Writer) (*driver.Meta, error) {
 	return meta, nil
 }
 
-func renderSQLPage(result driver.Result, lengths []int, showHeaders bool, out io.Writer) (bool, error) {
+func renderSQLPage(result driver.Result, padRight []bool, lengths []int, showHeaders bool, out io.Writer) (bool, error) {
 	data, err := result.Next()
 	if err != nil {
 		return false, err
@@ -69,7 +76,11 @@ func renderSQLPage(result driver.Result, lengths []int, showHeaders bool, out io
 
 	first := data[0]
 	for i, d := range first {
-		first[i] = tablewriter.PadRight(d, " ", lengths[i])
+		if padRight[i] {
+			first[i] = tablewriter.PadRight(d, " ", lengths[i])
+		} else {
+			first[i] = tablewriter.PadLeft(d, " ", lengths[i])
+		}
 	}
 	data[0] = first
 

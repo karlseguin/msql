@@ -8,11 +8,14 @@ import (
 )
 
 type Result interface {
+	Types() []string
 	Columns() []string
 	Lengths() []int
 	Meta() *Meta
 	Next() ([][]string, error)
 	IsSimple() (bool, string)
+	Rows() ([][]string, error)
+	Maps() ([]map[string]string, error)
 }
 
 type Meta struct {
@@ -91,10 +94,13 @@ type SimpleResult struct {
 	meta *Meta
 }
 
-func (r SimpleResult) Meta() *Meta               { return r.meta }
-func (_ SimpleResult) Lengths() []int            { return nil }
-func (_ SimpleResult) Columns() []string         { return nil }
-func (_ SimpleResult) Next() ([][]string, error) { return nil, nil }
+func (r SimpleResult) Meta() *Meta                        { return r.meta }
+func (_ SimpleResult) Types() []string                    { return nil }
+func (_ SimpleResult) Lengths() []int                     { return nil }
+func (_ SimpleResult) Columns() []string                  { return nil }
+func (_ SimpleResult) Next() ([][]string, error)          { return nil, nil }
+func (_ SimpleResult) Rows() ([][]string, error)          { return nil, nil }
+func (_ SimpleResult) Maps() ([]map[string]string, error) { return nil, nil }
 
 type EmptyResult struct{ SimpleResult }
 
@@ -111,6 +117,7 @@ type QueryResult struct {
 	fin     bool
 	lengths []int
 	scratch []byte
+	types   []string
 	columns []string
 	meta    *Meta
 	buffer  bytes.Buffer
@@ -122,6 +129,10 @@ func newQueryResult(c Conn, data []byte, fin bool, meta *Meta) (Result, error) {
 	columnLine := string(parts[2])
 	columnLine = columnLine[2 : len(columnLine)-len(" # name")]
 	columns := strings.Split(columnLine, ",\t")
+
+	typeLine := string(parts[3])
+	typeLine = typeLine[2 : len(typeLine)-len(" # type")]
+	types := strings.Split(typeLine, ",\t")
 
 	lengthLine := string(parts[4])
 	lengthLine = lengthLine[2 : len(lengthLine)-len(" # length")]
@@ -145,6 +156,7 @@ func newQueryResult(c Conn, data []byte, fin bool, meta *Meta) (Result, error) {
 	return &QueryResult{
 		conn:    c,
 		fin:     fin,
+		types:   types,
 		columns: columns,
 		lengths: lengths,
 		buffer:  buffer,
@@ -154,6 +166,10 @@ func newQueryResult(c Conn, data []byte, fin bool, meta *Meta) (Result, error) {
 }
 
 func (r *QueryResult) IsSimple() (bool, string) { return false, "" }
+
+func (r *QueryResult) Types() []string {
+	return r.types
+}
 
 func (r *QueryResult) Columns() []string {
 	return r.columns
@@ -165,6 +181,42 @@ func (r *QueryResult) Lengths() []int {
 
 func (r *QueryResult) Meta() *Meta {
 	return r.meta
+}
+
+func (r *QueryResult) Rows() ([][]string, error) {
+	rows := make([][]string, 0, r.meta.RowCount)
+	for {
+		data, err := r.Next()
+		if err != nil {
+			return nil, err
+		}
+		if data == nil {
+			return rows, nil
+		}
+		rows = append(rows, data...)
+	}
+}
+
+func (r *QueryResult) Maps() ([]map[string]string, error) {
+	columns := r.columns
+	rows := make([]map[string]string, 0, r.meta.RowCount)
+
+	for {
+		data, err := r.Next()
+		if err != nil {
+			return nil, err
+		}
+		if data == nil {
+			return rows, nil
+		}
+		for _, row := range data {
+			m := make(map[string]string, len(columns))
+			for i, column := range columns {
+				m[column] = row[i]
+			}
+			rows = append(rows, m)
+		}
+	}
 }
 
 func (r *QueryResult) Next() ([][]string, error) {
