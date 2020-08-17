@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"net/url"
 	"strings"
@@ -31,12 +32,17 @@ type Context struct {
 	host        string
 	port        string
 	database    string
+	version     string
+	release     string
+	id          string
 }
 
 func NewContext(conn driver.Conn, out io.Writer) *Context {
 	user := extractScalar(conn, "sselect current_user;", "unknown")
 	role := extractScalar(conn, "sselect current_role;", "unknown")
 	schema := extractScalar(conn, "sselect current_schema;", "unknown")
+	version := extractScalar(conn, "sselect value from sys.env() where name = 'monet_version';", "unknown")
+	release := extractScalar(conn, "sselect value from sys.env() where name = 'monet_release';", "unknown")
 
 	urlString := extractScalar(conn, "sselect value from sys.env() where name = 'merovingian_uri';", "//unknown/unknown")
 	if strings.HasPrefix(urlString, "mapi:") {
@@ -66,6 +72,9 @@ func NewContext(conn driver.Conn, out io.Writer) *Context {
 		host:     host,
 		port:     port,
 		database: database,
+		version:  version,
+		release:  release,
+		id:       fmt.Sprintf("%s:%s/%s", host, port, database),
 	}
 }
 

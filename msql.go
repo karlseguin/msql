@@ -109,6 +109,10 @@ func main() {
 	// handles -c or -f argument or stdin input
 	conditionallyExecuteAndExit(opts.Command, opts.File, context)
 
+	context.WriteString(fmt.Sprintf("client version: %s\n", VERSION))
+	context.WriteString(fmt.Sprintf("server version: %s (release: %s)\n", context.version, context.release))
+	context.WriteString(fmt.Sprintf("server address: %s\n\n", context.id))
+
 	promptText := context.SetPrompt(preferences.prompt)
 	prompt, err := libedit.InitFiles("msql", true, os.Stdin, os.Stdout, os.Stderr)
 	if err != nil {
