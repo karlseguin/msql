@@ -19,6 +19,8 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+const VERSION = "0.0.1"
+
 type Command interface {
 	Execute(context commands.Context, arguments string)
 }
@@ -51,6 +53,7 @@ func main() {
 		ExitOnError bool         `description:"exit on error" long:"exit-on-error"`
 		Help        func() error `description:"show this help screen" long:"help"`
 		File        string       `description:"file to exist" long:"file" short:"f"`
+		Version     bool         `description:"print the version number" long:"version"`
 	}
 
 	parser := flags.NewParser(&opts, flags.Default & ^flags.HelpFlag)
@@ -62,6 +65,10 @@ func main() {
 	_, err := parser.Parse()
 	if err != nil {
 		log.Fatal(err)
+	}
+	if opts.Version {
+		os.Stdout.Write([]byte(VERSION))
+		os.Exit(0)
 	}
 
 	log.SetOutput(os.Stdout)
