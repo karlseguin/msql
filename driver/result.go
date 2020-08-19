@@ -2,9 +2,9 @@ package driver
 
 import (
 	"bytes"
+	"fmt"
 	"strconv"
 	"strings"
-	"unicode/utf8"
 )
 
 type Result interface {
@@ -87,6 +87,14 @@ func newResult(c Conn) (Result, error) {
 		return OKResult{SimpleResult: SimpleResult{meta: meta}}, nil
 	}
 
+	if bytes.HasPrefix(data, []byte("&5 ")) {
+		parts := bytes.SplitN(data[3:], []byte(" "), 2)
+		return PrepareResult{
+			id:           string(parts[0]),
+			SimpleResult: SimpleResult{meta: meta},
+		}, nil
+	}
+
 	return nil, detailedDriverError("unknown response", string(data))
 }
 
@@ -109,6 +117,15 @@ func (r EmptyResult) IsSimple() (bool, string) { return true, "" }
 type OKResult struct{ SimpleResult }
 
 func (r OKResult) IsSimple() (bool, string) { return true, "OK\n" }
+
+type PrepareResult struct {
+	id string
+	SimpleResult
+}
+
+func (r PrepareResult) IsSimple() (bool, string) {
+	return true, fmt.Sprintf("OK, use: exec %s(...);\n", r.id)
+}
 
 // TODO: this should probably be an interface that can return data based on the
 // type of result.
@@ -283,24 +300,38 @@ func (r *QueryResult) asRows() [][]string {
 	return table
 }
 
-// taken from strconv.Unquote
 func unquote(s string, buf []byte) string {
 	if strings.IndexByte(s, '\\') == -1 {
 		return s
 	}
 
-	var runeTmp [utf8.UTFMax]byte
-	for len(s) > 0 {
-		c, multibyte, ss, err := strconv.UnquoteChar(s, '\'')
-		if err != nil {
-			return s
-		}
-		s = ss
-		if c < utf8.RuneSelf || !multibyte {
-			buf = append(buf, byte(c))
+	escape := false
+	for _, c := range s {
+		if escape {
+			escape = false
+			if c == 'f' {
+				buf = append(buf, '\f')
+			} else if c == 'n' {
+				buf = append(buf, '\n')
+			} else if c == 'r' {
+				buf = append(buf, '\r')
+			} else if c == 't' {
+				buf = append(buf, '\t')
+			} else if c == 'v' {
+				buf = append(buf, '\v')
+			} else if c == '\\' {
+				buf = append(buf, '\\')
+			} else if c == '\'' {
+				buf = append(buf, '\'')
+			} else if c == '"' {
+				buf = append(buf, '"')
+			} else {
+				buf = append(buf, string(c)...)
+			}
+		} else if c == '\\' {
+			escape = true
 		} else {
-			n := utf8.EncodeRune(runeTmp[:], c)
-			buf = append(buf, runeTmp[:n]...)
+			buf = append(buf, string(c)...)
 		}
 	}
 	return string(buf)

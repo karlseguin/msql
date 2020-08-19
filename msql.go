@@ -19,7 +19,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-const VERSION = "0.0.2"
+const VERSION = "0.0.3"
 
 type Command interface {
 	Execute(context commands.Context, arguments string)
@@ -207,7 +207,10 @@ func statement(prompt libedit.EditLine, context *Context, line string) {
 			if rest != "" {
 				// not great, but it works
 				context.Prompt()
-				context.Write([]byte(rest)[1:])
+				context.Write([]byte(rest))
+				if rest[len(rest)-1] != '\n' {
+					context.Write([]byte("\n"))
+				}
 				statement(prompt, context, rest)
 				return
 			}
@@ -308,7 +311,6 @@ func (s *state) add(prompt libedit.EditLine, line string) (bool, string) {
 		if c == ';' && s.literal == 0 {
 			// We have a full statement statement. Add the line up to and including
 			// (thus the +1) semi colon
-			// TODO: figure out what to do with the rest
 			s.WriteString(line[:i+1])
 			return true, strings.TrimSpace(line[i+1:])
 		}
