@@ -59,8 +59,17 @@ func (describe Describe) Execute(context Context, args string) {
 		log.WithFields(log.Fields{"context": "describe: id", "schema": schema, "table": table}).Error(meta)
 		return
 	}
+
+	tpe := meta[2]
+	if tpe == "0" {
+		describe.table(context, tableId, conn, table)
+	} else if tpe == "1" {
+		context.WriteString(meta[1])
+		context.WriteString("\n\n")
+	} else {
+		log.Errorf("don't know how to describe type: %s", tpe)
+	}
 	// todo: support views and other stuff, I think based on meta[2] (the type)
-	describe.table(context, tableId, conn, table)
 }
 
 func (describe Describe) table(context Context, tableId int, conn driver.Conn, table string) {
