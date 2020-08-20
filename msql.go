@@ -35,6 +35,9 @@ func init() {
 	cmds["\\?"] = commands.Help{}
 	cmds["\\f"] = commands.Format{}
 	cmds["\\x"] = commands.Expanded{}
+	cmds["\\d"] = commands.Describe{}
+	cmds["\\d+"] = commands.Describe{}
+	cmds["\\du"] = commands.Users{}
 	cmds["\\timing"] = commands.Timing{}
 }
 
@@ -173,16 +176,6 @@ func command(prompt libedit.EditLine, context *Context, line string) {
 
 	if c := cmds[cmd]; c != nil {
 		c.Execute(context, args)
-	} else if cmd == "\\d" || cmd == "\\d+" {
-		query(context, `
-			select s.name as Schema, t.name as Name, lower(tt.table_type_name) as Type
-			from sys.tables t
-			join sys.schemas s on t.schema_id = s.id
-			join sys.table_types tt on t.type = tt.table_type_id
-			where not t.system;
-		`)
-	} else if cmd == "\\du" {
-		query(context, "select * from sys.users;")
 	} else {
 		log.Error("invalid command, type \\h for a list of commands")
 	}

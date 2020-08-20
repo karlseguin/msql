@@ -124,8 +124,21 @@ func (c *Context) WriteString(data string) {
 func (c *Context) Format(format string) {
 	c.format = format
 }
+
 func (c *Context) Timing(on bool) {
 	c.timing = on
+}
+
+func (c *Context) Schema() string {
+	return c.schema
+}
+
+func (c *Context) Conn() driver.Conn {
+	return c.conn
+}
+
+func (c *Context) Query(sql string) {
+	query(c, sql)
 }
 
 func (c *Context) template(t string) string {

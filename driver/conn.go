@@ -8,8 +8,10 @@ import (
 	"encoding/hex"
 	"hash"
 	"io"
+	"log"
 	"net"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -190,6 +192,64 @@ func (c Conn) QueryRows(sql string) ([][]string, error) {
 	return r.Rows()
 }
 
+func (c Conn) PrepareRow(sql string, values ...interface{}) ([]string, error) {
+	rows, err := c.PrepareRows(sql, values...)
+	if err != nil || len(rows) == 0 {
+		return nil, err
+	}
+	return rows[0], nil
+}
+
+func (c Conn) PrepareRows(sql string, values ...interface{}) ([][]string, error) {
+	r, err := c.prepareAndExec(sql, values...)
+	if err != nil {
+		return nil, err
+	}
+	return r.Rows()
+}
+
+// Our prepare / exec is lame. It only deals with basic values, but for what
+// we need from msql, it's good enough.
+func (c Conn) prepareAndExec(sql string, values ...interface{}) (Result, error) {
+	if err := c.Send("sprepare", sql, ";"); err != nil {
+		return nil, err
+	}
+	data, err := c.readMessage()
+	if err != nil {
+		return nil, err
+	}
+	parts := bytes.SplitN(data, []byte(" "), 3)
+	if len(parts) != 3 {
+		return nil, detailedDriverError("invalid prepare response", string(data))
+	}
+
+	id := string(parts[1])
+	encoded := make([]string, len(values))
+	for i, value := range values {
+		encoded[i] = encode(value)
+	}
+
+	if err := c.Send("sexec ", id, "(", strings.Join(encoded, ", "), ");"); err != nil {
+		return nil, err
+	}
+
+	result, err := newResult(c)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := c.Send("sdeallocate ", id, ";"); err != nil {
+		return nil, err
+	}
+
+	// drain the response from deallocate
+	if _, err := c.readMessage(); err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
+
 func (c Conn) readMessageString() (string, error) {
 	data, err := c.readMessage()
 	if err != nil {
@@ -342,4 +402,15 @@ func parseHashAlgo(algo string) hash.Hash {
 	default:
 		return nil
 	}
+}
+
+func encode(value interface{}) string {
+	switch v := value.(type) {
+	case int:
+		return strconv.Itoa(v)
+	case string:
+		return "'" + strings.ReplaceAll(strings.ReplaceAll(v, "\\", "\\\\"), "'", "\\'") + "'"
+	}
+	log.Panicf("cannot encode %v", value)
+	return ""
 }

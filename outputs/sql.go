@@ -90,7 +90,6 @@ func renderSQLPage(result driver.Result, padRight []bool, lengths []int, showHea
 	table.SetHeaderLine(true)
 	table.SetAutoWrapText(false)
 	table.SetReflowDuringAutoWrap(false)
-	table.SetAlignment(tablewriter.ALIGN_LEFT)
 	table.SetBorders(tablewriter.Border{Left: false, Top: false, Right: false, Bottom: false})
 	table.SetCenterSeparator("|")
 
